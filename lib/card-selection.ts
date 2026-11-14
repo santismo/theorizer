@@ -15,10 +15,10 @@ export function cardConnectionWeight(chord:Chord,previous?:Chord){
  if(chord.root===previous.root&&chord.quality===previous.quality)score-=2;
  return Math.exp(score);
 }
-export function chooseCard({qualities,randomness,previous,random=Math.random}:{qualities:readonly string[];randomness:number;previous?:Chord;random?:()=>number}):Chord{
+export function chooseCard({qualities,randomness,previous,exclude,random=Math.random}:{qualities:readonly string[];randomness:number;previous?:Chord;exclude?:Chord;random?:()=>number}):Chord{
  const unique=[...new Set(qualities)];
  if(!unique.length)throw new Error('A card palette needs at least one chord quality.');
- const candidates=Array.from({length:12},(_,root)=>unique.map(quality=>({root,quality}))).flat();
+ const candidates=Array.from({length:12},(_,root)=>unique.map(quality=>({root,quality}))).flat().filter(c=>!exclude||c.root!==exclude.root||c.quality!==exclude.quality);
  const weights=candidates.map(c=>cardConnectionWeight(c,previous)),total=weights.reduce((a,b)=>a+b,0),blend=Math.max(0,Math.min(100,randomness))/100;
  let draw=Math.max(0,Math.min(1,random()));
  for(let i=0;i<candidates.length;i++){draw-=(1-blend)*weights[i]/total+blend/candidates.length;if(draw<0)return candidates[i]}
@@ -37,4 +37,22 @@ export function cardSwipeDirection(dx:number,dy:number,elapsed:number):'next'|'b
  if(Math.abs(dx)<=Math.abs(dy))return null;
  if(Math.abs(dx)>52||(Math.abs(dx)>18&&Math.abs(dx)/Math.max(1,elapsed)>.45))return dx<0?'next':'back';
  return null;
+}
+
+/** Keep one concrete upcoming card; navigation consumes exactly what is previewed. */
+export function withCardPreview(history:CardHistory,draw:(previous:Chord)=>Chord):CardHistory{
+ if(history.cards[history.index+1])return history;
+ return {...history,cards:[...history.cards,draw(history.cards[history.index])]};
+}
+/** Changing the controls branches from the current card, preserving the entire past. */
+export function replaceCardPreview(history:CardHistory,draw:(previous:Chord,oldPreview?:Chord)=>Chord):CardHistory{
+ return {...history,cards:[...history.cards.slice(0,history.index+1),draw(history.cards[history.index],history.cards[history.index+1])]};
+}
+/** A batch starts with the visible card, follows its preview, and leaves a new preview ready. */
+export function takeCardBatch(history:CardHistory,count:number,draw:(previous:Chord)=>Chord):{chords:Chord[];history:CardHistory}{
+ if(!Number.isInteger(count)||count<1||count>16)throw new Error('Choose 1–16 chords.');
+ let next=history;
+ const chords=[next.cards[next.index]];
+ for(let i=1;i<count;i++){next=stepCard(next,'next',draw);chords.push(next.cards[next.index])}
+ return {chords,history:withCardPreview(next,draw)};
 }

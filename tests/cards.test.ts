@@ -37,3 +37,37 @@ assert.equal(draws,1);assert.equal(forward.cards,second.cards);assert.deepEqual(
 assert.equal(cardSwipeDirection(-80,12,400),'next');assert.equal(cardSwipeDirection(80,12,400),'back');
 assert.equal(cardSwipeDirection(-30,2,40),'next');assert.equal(cardSwipeDirection(-20,120,100),null);assert.equal(cardSwipeDirection(4,3,15),null);assert.equal(cardSwipeDirection(30,0,500),null);
 console.log('Cards passed: uniform random, relationship strength, key/scale independence, transposition, preserved history, and swipe thresholds.');
+
+// The visible upcoming card is consumed verbatim; changing controls rewrites only the future.
+const {withCardPreview,replaceCardPreview,takeCardBatch}=await import('../lib/card-selection.ts');
+const {placeChordBatch,placeDiceSets,emptyBar}=await import('../lib/dice.ts');
+const {DEFAULT}=await import('../lib/harmony.ts');
+let calls=0;
+const chain=(previous:Chord)=>{calls++;return {root:(previous.root+5)%12,quality:'m7'}};
+const previewed=withCardPreview(first,chain);
+assert.equal(calls,1);assert.equal(withCardPreview(previewed,chain),previewed);assert.equal(calls,1);
+const advanced=withCardPreview(stepCard(previewed,'next',chain),chain);
+assert.equal(advanced.cards[advanced.index],previewed.cards[1]);assert.equal(calls,2);
+const backWithPreview=stepCard(advanced,'back',chain);
+const rewritten=replaceCardPreview(backWithPreview,(previous,exclude)=>chooseCard({qualities:DICE_PALETTES.Classic,randomness:100,previous,exclude,random:()=>.5}));
+assert.deepEqual(rewritten.cards[0],first.cards[0]);assert.equal(rewritten.cards.length,2);
+assert.notDeepEqual(rewritten.cards[1],backWithPreview.cards[1]);
+assert.equal(backWithPreview.cards.length,3,'Changing the preview must not mutate prior history.');
+for(let count=1;count<=16;count++){
+ const batch=takeCardBatch(previewed,count,chain);
+ assert.equal(batch.chords.length,count);assert.equal(batch.chords[0],previewed.cards[0]);
+ if(count>1)assert.equal(batch.chords[1],previewed.cards[1]);
+ assert.equal(batch.history.index,count-1);assert.ok(batch.history.cards[count]);
+ const kept=placeChordBatch([],batch.chords,DEFAULT);
+ assert.equal(kept.length,count);assert.ok(kept.every(c=>c.locked));
+ assert.deepEqual(kept.map(c=>[c.root,c.quality]),batch.chords.map(c=>[c.root,c.quality]));
+}
+const batch16=takeCardBatch(previewed,16,chain).chords;
+const occupied=[parseChord('G7')!,emptyBar(),parseChord('C')!];
+const filled=placeChordBatch(occupied,batch16.slice(0,3),DEFAULT);
+assert.deepEqual(filled[0],occupied[0]);assert.deepEqual(filled[2],occupied[2]);assert.equal(filled.length,5);
+assert.deepEqual([filled[1],filled[3],filled[4]].map(c=>c.root),batch16.slice(0,3).map(c=>c.root));
+assert.equal(placeChordBatch(occupied,batch16,DEFAULT),occupied,'An overflowing batch must not partially save.');
+assert.equal(placeDiceSets([],batch16,DEFAULT).length,0,'Dice mode retains its 8-set limit.');
+assert.throws(()=>takeCardBatch(previewed,17,chain));
+console.log('Card previews and 1–16 chord batches passed: exact preview consumption, branching, ordered fills, capacity and Dice compatibility.');

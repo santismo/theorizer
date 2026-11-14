@@ -21,9 +21,13 @@ export function availableDiceSlots(chords:Chord[]):number[]{
  return Array.from({length:16},(_,i)=>i).filter(i=>!chords[i]||chords[i].empty);
 }
 /** Keep a whole roll atomically; never overwrite chords or silently truncate a set. */
-export function placeDiceSets(chords:Chord[],rolled:Chord[],settings:Settings):Chord[]{
+export function placeChordBatch(chords:Chord[],rolled:Chord[],settings:Settings):Chord[]{
  const slots=availableDiceSlots(chords);
- if(!rolled.length||rolled.length>8||rolled.length>slots.length||rolled.some(c=>c.empty))return chords;
+ if(!rolled.length||rolled.length>16||rolled.length>slots.length||rolled.some(c=>c.empty))return chords;
  const finalSettings={...settings,count:Math.max(settings.count,slots[rolled.length-1]+1)};
  return rolled.reduce((next,chord,i)=>placeChord(next,chord,slots[i],finalSettings),chords);
+}
+
+export function placeDiceSets(chords:Chord[],rolled:Chord[],settings:Settings):Chord[]{
+ return rolled.length>8?chords:placeChordBatch(chords,rolled,settings);
 }
