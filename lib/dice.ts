@@ -15,3 +15,15 @@ export function tensionChange(chord:Chord,previous:Chord|undefined,key:number,mo
  const level=tension(chord,key,mode),before=previous&&!previous.empty?tension(previous,key,mode):null;
  return {level,delta:before===null?null:level-before};
 }
+
+/** Fill existing empty bars first, then append within the section limit. */
+export function availableDiceSlots(chords:Chord[]):number[]{
+ return Array.from({length:16},(_,i)=>i).filter(i=>!chords[i]||chords[i].empty);
+}
+/** Keep a whole roll atomically; never overwrite chords or silently truncate a set. */
+export function placeDiceSets(chords:Chord[],rolled:Chord[],settings:Settings):Chord[]{
+ const slots=availableDiceSlots(chords);
+ if(!rolled.length||rolled.length>8||rolled.length>slots.length||rolled.some(c=>c.empty))return chords;
+ const finalSettings={...settings,count:Math.max(settings.count,slots[rolled.length-1]+1)};
+ return rolled.reduce((next,chord,i)=>placeChord(next,chord,slots[i],finalSettings),chords);
+}
