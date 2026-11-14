@@ -1,6 +1,6 @@
 import {CHORD_FACES} from './dice.ts';
 import {SCALES,pitchClasses,type Chord,type Settings} from './harmony.ts';
-export const DICE_PALETTES={Classic:CHORD_FACES,Extended:['maj7','m7','7','maj9','m9','9','6','m6','add9','madd9','sus2','sus4','m11','11','13','maj13','m13','7sus4','9sus4','mMaj7'],Altered:['7b9','7#9','7#11','maj7#11','m7b5','dim7','aug','7b9#11','13b9','maj9#11','mMaj9','7#5#9','7b9','7#9','maj7','m9','9sus4','m11','13','m6']} as const;
+export const DICE_PALETTES={Simple:Array.from({length:20},(_,i)=>['m7','7','maj7','dim7'][i%4]),Classic:CHORD_FACES,Extended:['maj7','m7','7','maj9','m9','9','6','m6','add9','madd9','sus2','sus4','m11','11','13','maj13','m13','7sus4','9sus4','mMaj7'],Altered:['7b9','7#9','7#11','maj7#11','m7b5','dim7','aug','7b9#11','13b9','maj9#11','mMaj9','7#5#9','7b9','7#9','maj7','m9','9sus4','m11','13','m6']} as const;
 export type DicePalette=keyof typeof DICE_PALETTES;
 const mod=(n:number)=>(n%12+12)%12;
 export function connectionWeight(root:number,quality:string,previous:Chord|undefined,settings:Pick<Settings,'key'|'mode'>){

@@ -3,7 +3,7 @@ import {chooseTonalCard} from './card-tonality.ts';
 import {voice,type Chord} from './harmony.ts';
 export type ChordLogic='connection'|'tonal'|'voice';
 export type LogicSettings={logic:ChordLogic;randomness:number;modulation:number;movement:number};
-export const DEFAULT_LOGIC:LogicSettings={logic:'connection',randomness:35,modulation:35,movement:35};
+export const DEFAULT_LOGIC:LogicSettings={logic:'tonal',randomness:35,modulation:35,movement:35};
 export const LOGIC_OPTIONS=[{value:'connection',label:'Connection'},{value:'tonal',label:'Tonal movement'},{value:'voice',label:'Voice movement'}] as const;
 export const logicLabels=(logic:ChordLogic)=>logic==='tonal'?['Similar','Modulated']:logic==='voice'?['Smooth','Angular']:['Connected','Random'];
 export const logicAmount=(settings:LogicSettings)=>settings.logic==='tonal'?settings.modulation:settings.logic==='voice'?settings.movement:settings.randomness;

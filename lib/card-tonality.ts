@@ -1,95 +1,45 @@
-import {pitchClasses,QUALITIES,SCALES,noteName,type Chord} from './harmony.ts';
+import {pitchClasses,type Chord} from './harmony.ts';
 import {cardConnectionWeight} from './card-selection.ts';
 
-export type TonalCenter={key:number;mode:'Major'|'Minor'};
-export type TonalEstimate=TonalCenter&{score:number;confidence:number};
-export type TonalMemory={center:TonalCenter;target?:TonalCenter;pending:Chord[];amount:number;settled:number};
-export type TonalCard=Chord&{tonal:TonalMemory};
+// Read old saved chords without letting their former center/route steer new draws.
+export function tonalMemory(chord?:Chord):{center:{key:number;mode:string}}|undefined{return (chord as Chord&{tonal?:{center:{key:number;mode:string}}}|undefined)?.tonal}
 const mod=(n:number)=>(n%12+12)%12;
-const same=(a:Chord,b?:Chord)=>!!b&&a.root===b.root&&a.quality===b.quality;
-const sameCenter=(a:TonalCenter,b:TonalCenter)=>a.key===b.key&&a.mode===b.mode;
-const centers:TonalCenter[]=Array.from({length:12},(_,key)=>(['Major','Minor'] as const).map(mode=>({key,mode}))).flat();
-export const centerName=(center:TonalCenter)=>`${noteName(center.key,center.key,center.mode)} ${center.mode.toLowerCase()}`;
-export function tonalMemory(chord?:Chord):TonalMemory|undefined{return (chord as TonalCard|undefined)?.tonal}
-function scale(center:TonalCenter){return SCALES[center.mode].map(n=>mod(n+center.key))}
-function dominant(chord:Chord){const intervals=QUALITIES[chord.quality]||[];return intervals.includes(4)&&intervals.includes(10)}
-function tonicQuality(chord:Chord,center:TonalCenter){const intervals=QUALITIES[chord.quality]||[];return chord.root===center.key&&intervals.includes(center.mode==='Minor'?3:4)&&!intervals.includes(center.mode==='Minor'?4:3)&&(!intervals.includes(10)||center.mode==='Minor')}
-export function tonalFit(chord:Chord,center:TonalCenter){
- const allowed=scale(center);
- // Functional V and leading-tone chords in minor use its raised seventh.
- if(center.mode==='Minor'&&((mod(chord.root-center.key)===7&&(QUALITIES[chord.quality]||[]).includes(4))||mod(chord.root-center.key)===11))allowed.push(mod(center.key+11));
- const tones=pitchClasses(chord);return tones.length?tones.filter(n=>allowed.includes(n)).length/tones.length:0;
+const keyScales=Array.from({length:12},(_,root)=>[
+ [0,2,4,5,7,9,11], // Major
+ [0,2,3,5,7,8,10], // Natural minor
+ [0,2,3,5,7,8,11], // Harmonic minor, including fully diminished sevenths
+].map(scale=>scale.map(n=>mod(n+root)))).flat();
+const keyDistances=keyScales.map(a=>keyScales.map(b=>7-a.filter(n=>b.includes(n)).length));
+const contexts=new Map<string,number[]>(),distances=new Map<string,number>();
+const identity=(chord:Chord)=>`${mod(chord.root)}:${chord.quality}`;
+/** All equally plausible key collections for this chord, never a chosen home key. */
+function possibleKeys(chord:Chord){
+ const id=identity(chord),cached=contexts.get(id);if(cached)return cached;
+ const notes=pitchClasses(chord),fits=keyScales.map(scale=>notes.filter(n=>scale.includes(n)).length),best=Math.max(...fits);
+ const keys=fits.flatMap((fit,i)=>fit===best?[i]:[]);contexts.set(id,keys);return keys;
 }
-/** A short, recency-weighted hypothesis list; no composer key/scale metadata is read. */
-export function inferTonalCenters(history:Chord[]):TonalEstimate[]{
- const recent=history.filter(c=>!c.empty).slice(-8);
- if(!recent.length)return [];
- const scored=centers.map(center=>{
-  let score=0;
-  recent.forEach((chord,i)=>{
-   const weight=Math.pow(.78,recent.length-1-i),fit=tonalFit(chord,center),degree=mod(chord.root-center.key);
-   score+=weight*((fit-.65)*4+(tonicQuality(chord,center)?1.5:degree===7?.25:0));
-   const previous=recent[i-1];
-   if(previous&&tonicQuality(chord,center)){
-    if(mod(previous.root-center.key)===7&&dominant(previous))score+=weight*4;
-    else if(mod(previous.root-center.key)===5)score+=weight*1;
-   }
-  });
-  return {...center,score};
- }).sort((a,b)=>b.score-a.score);
- const total=scored.reduce((sum,c)=>sum+Math.exp((c.score-scored[0].score)/1.3),0);
- return scored.map(c=>({...c,confidence:Math.exp((c.score-scored[0].score)/1.3)/total}));
+/** Minimum key-collection change required between two chords' possible contexts. */
+export function chordKeyDistance(a:Chord,b:Chord){
+ const id=[identity(a),identity(b)].sort().join('|'),cached=distances.get(id);if(cached!==undefined)return cached;
+ const before=possibleKeys(a),after=possibleKeys(b);
+ const distance=Math.min(...before.flatMap(i=>after.map(j=>keyDistances[i][j])));
+ distances.set(id,distance);return distance;
 }
-export function tonalDistance(a:TonalCenter,b:TonalCenter){
- const from=scale(a),to=scale(b);return 7-from.filter(n=>to.includes(n)).length+(a.mode!==b.mode?.25:0);
-}
-function weighted<T>(items:T[],weight:(item:T)=>number,random:()=>number):T{
- const weights=items.map(item=>Math.max(.000001,weight(item))),total=weights.reduce((a,b)=>a+b,0);let draw=Math.min(.999999999,Math.max(0,random()))*total;
- for(let i=0;i<items.length;i++){draw-=weights[i];if(draw<0)return items[i]}return items.at(-1)!;
-}
-function pool(qualities:readonly string[]):Chord[]{return Array.from({length:12},(_,root)=>[...new Set(qualities)].map(quality=>({root,quality}))).flat()}
-function stamp(chord:Chord,tonal:TonalMemory,key=tonal.center):TonalCard{return {...chord,key:key.key,mode:key.mode,tonal}}
-function voiceAlternative(planned:Chord,qualities:readonly string[],exclude:Chord|undefined,random:()=>number){
- if(!same(planned,exclude))return planned;
- const tones=QUALITIES[planned.quality]||[],family=dominant(planned)?'dominant':tones.includes(3)?'minor':'major';
- const alternatives=qualities.map(quality=>({root:planned.root,quality})).filter(c=>!same(c,exclude)).filter(c=>{
-  const ints=QUALITIES[c.quality]||[];return family==='dominant'?dominant(c):family==='minor'?ints.includes(3):ints.includes(4)&&!ints.includes(10);
+export function chooseTonalCard({qualities,amount,history,exclude,fixedRoot,fixedQuality,random=Math.random}:{qualities:readonly string[];amount:number;history:Chord[];exclude?:Chord;fixedRoot?:number;fixedQuality?:string;random?:()=>number}):Chord{
+ let candidates=Array.from({length:12},(_,root)=>[...new Set(qualities)].map(quality=>({root,quality}))).flat().filter(c=>(fixedRoot===undefined||c.root===fixedRoot)&&(fixedQuality===undefined||c.quality===fixedQuality));
+ if(!candidates.length)throw new Error('No chord matches this palette and held dice.');
+ const allowed=candidates.filter(c=>!exclude||c.root!==exclude.root||c.quality!==exclude.quality);if(allowed.length)candidates=allowed;
+ const previous=history.filter(c=>!c.empty).at(-1),depth=Math.max(0,Math.min(100,amount))/100;
+ // Every step starts from the current chord. No remembered center, cadence queue or dwell period.
+ // The right side both takes distant steps more often and favors larger key changes.
+ const distant=!!previous&&random()<.97*Math.pow(depth,1.2);
+ const weights=candidates.map(c=>{
+  if(!previous)return 1;
+  const distance=chordKeyDistance(previous,c),repeat=c.root===previous.root&&c.quality===previous.quality;
+  const relation=Math.pow(cardConnectionWeight(c,previous),.12);
+  return (repeat?.12:1)*relation*(distant?Math.exp((1+depth*3)*distance):Math.exp(-3.5*distance));
  });
- return alternatives.length?weighted(alternatives,c=>cardConnectionWeight(c,planned),random):planned;
-}
-export function chooseTonalCard({qualities,amount,history,exclude,fixedRoot,fixedQuality,random=Math.random}:{qualities:readonly string[];amount:number;history:Chord[];exclude?:Chord;fixedRoot?:number;fixedQuality?:string;random?:()=>number}):TonalCard{
- const allowedQualities=fixedQuality===undefined?qualities:[fixedQuality];
- const candidates=pool(qualities).filter(c=>(fixedRoot===undefined||c.root===fixedRoot)&&(fixedQuality===undefined||c.quality===fixedQuality));if(!candidates.length)throw new Error('A tonal palette needs chord qualities.');
- const previous=history.filter(c=>!c.empty).at(-1),prior=tonalMemory(previous),depth=Math.max(0,Math.min(100,amount));
- const estimated=inferTonalCenters(history)[0];
- const center:TonalCenter=prior?.center??(estimated?{key:estimated.key,mode:estimated.mode}:{key:previous?.root??0,mode:'Major'});
- if(prior&&prior.amount===depth&&prior.target&&prior.pending.length&&prior.pending.every(c=>qualities.includes(c.quality))&&(fixedRoot===undefined||prior.pending[0].root===fixedRoot)&&(fixedQuality===undefined||prior.pending[0].quality===fixedQuality)){
-  const planned=prior.pending[0],pending=prior.pending.slice(1),arrived=pending.length===0;
-  return stamp(voiceAlternative(planned,allowedQualities,exclude,random),{center:arrived?prior.target:center,target:arrived?undefined:prior.target,pending,amount:depth,settled:0},prior.target);
- }
- const settled=prior?.settled??2;
- const shouldMove=depth>0&&settled>=1&&random()<.8*Math.pow(depth/100,1.25);
- if(shouldMove){
-  // Nearby controls favor shared scales; far-right controls favor remote but purposeful arrivals.
-  const wanted=.4+depth/100*4.3;
-  const destinations=centers.filter(c=>!sameCenter(c,center)&&candidates.some(chord=>tonicQuality(chord,c)&&tonalFit(chord,c)===1));
-  if(!destinations.length){const filtered=candidates.filter(c=>!same(c,exclude)),options=filtered.length?filtered:candidates;const chosen=weighted(options,c=>Math.exp(tonalFit(c,center)*4)*Math.pow(cardConnectionWeight(c,previous),.5),random);return stamp(chosen,{center,pending:[],amount:depth,settled:settled+1})}
-  const target=weighted(destinations,c=>Math.exp(-Math.pow(tonalDistance(center,c)-wanted,2)/1.2),random);
-  const tonics=candidates.filter(c=>tonicQuality(c,target)&&tonalFit(c,target)===1);
-  const arrival=weighted(tonics,c=>1/Math.max(1,pitchClasses(c).length-2),random);
-  const dominants=candidates.filter(c=>c.root===mod(target.key+7)&&dominant(c));
-  // All built-in palettes offer dominant chords. A custom palette can still arrive directly.
-  const approach=dominants.length?weighted(dominants,c=>Math.exp(tonalFit(c,target)*3)*Math.pow(cardConnectionWeight(c,previous),.2),random):undefined;
-  const pivots=candidates.filter(c=>tonalFit(c,center)===1&&tonalFit(c,target)===1&&!same(c,previous)&&!same(c,exclude)&&c.root!==target.key);
-  const pivot=pivots.length?weighted(pivots,c=>cardConnectionWeight(c,previous),random):undefined;
-  const route=[...(pivot?[pivot]:[]),...(approach?[approach]:[]),arrival];
-  const [first,...pending]=route;
-  const chosen=voiceAlternative(first,allowedQualities,exclude,random);
-  return stamp(chosen,{center:pending.length?center:target,target:pending.length?target:undefined,pending,amount:depth,settled:0},pivot?center:target);
- }
- const filtered=candidates.filter(c=>!same(c,exclude)),options=filtered.length?filtered:candidates;
- const bestFit=Math.max(...options.map(c=>tonalFit(c,center)));
- const inKey=options.filter(c=>tonalFit(c,center)>=bestFit-.001);
- const choice=weighted(inKey,c=>Math.pow(cardConnectionWeight(c,previous),.5)*(tonicQuality(c,center)?1.25:1),random);
- return stamp(choice,{center,pending:[],amount:depth,settled:settled+1});
+ let draw=Math.max(0,Math.min(.999999999,random()))*weights.reduce((a,b)=>a+b,0);
+ for(let i=0;i<candidates.length;i++){draw-=weights[i];if(draw<0)return candidates[i]}
+ return candidates.at(-1)!;
 }
