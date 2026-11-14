@@ -26,10 +26,10 @@ export function chooseCard({qualities,randomness,previous,exclude,random=Math.ra
 }
 export type CardHistory={cards:Chord[];index:number};
 /** Revisiting a card does not redraw it or destroy the forward trail. */
-export function stepCard(history:CardHistory,direction:'next'|'back',draw:(previous:Chord)=>Chord):CardHistory{
+export function stepCard(history:CardHistory,direction:'next'|'back',draw:(previous:Chord,trail:Chord[])=>Chord):CardHistory{
  if(direction==='back')return history.index>0?{...history,index:history.index-1}:history;
  if(history.index<history.cards.length-1)return {...history,index:history.index+1};
- const next=draw(history.cards[history.index]);
+ const next=draw(history.cards[history.index],history.cards.slice(0,history.index+1));
  return {cards:[...history.cards,next],index:history.index+1};
 }
 
@@ -40,16 +40,16 @@ export function cardSwipeDirection(dx:number,dy:number,elapsed:number):'next'|'b
 }
 
 /** Keep one concrete upcoming card; navigation consumes exactly what is previewed. */
-export function withCardPreview(history:CardHistory,draw:(previous:Chord)=>Chord):CardHistory{
+export function withCardPreview(history:CardHistory,draw:(previous:Chord,trail:Chord[])=>Chord):CardHistory{
  if(history.cards[history.index+1])return history;
- return {...history,cards:[...history.cards,draw(history.cards[history.index])]};
+ return {...history,cards:[...history.cards,draw(history.cards[history.index],history.cards.slice(0,history.index+1))]};
 }
 /** Changing the controls branches from the current card, preserving the entire past. */
-export function replaceCardPreview(history:CardHistory,draw:(previous:Chord,oldPreview?:Chord)=>Chord):CardHistory{
- return {...history,cards:[...history.cards.slice(0,history.index+1),draw(history.cards[history.index],history.cards[history.index+1])]};
+export function replaceCardPreview(history:CardHistory,draw:(previous:Chord,oldPreview:Chord|undefined,trail:Chord[])=>Chord):CardHistory{
+ return {...history,cards:[...history.cards.slice(0,history.index+1),draw(history.cards[history.index],history.cards[history.index+1],history.cards.slice(0,history.index+1))]};
 }
 /** A batch starts with the visible card, follows its preview, and leaves a new preview ready. */
-export function takeCardBatch(history:CardHistory,count:number,draw:(previous:Chord)=>Chord):{chords:Chord[];history:CardHistory}{
+export function takeCardBatch(history:CardHistory,count:number,draw:(previous:Chord,trail:Chord[])=>Chord):{chords:Chord[];history:CardHistory}{
  if(!Number.isInteger(count)||count<1||count>16)throw new Error('Choose 1–16 chords.');
  let next=history;
  const chords=[next.cards[next.index]];
