@@ -15,10 +15,13 @@ export function cardConnectionWeight(chord:Chord,previous?:Chord){
  if(chord.root===previous.root&&chord.quality===previous.quality)score-=2;
  return Math.exp(score);
 }
-export function chooseCard({qualities,randomness,previous,exclude,random=Math.random}:{qualities:readonly string[];randomness:number;previous?:Chord;exclude?:Chord;random?:()=>number}):Chord{
+export function chooseCard({qualities,randomness,previous,exclude,fixedRoot,fixedQuality,random=Math.random}:{qualities:readonly string[];randomness:number;previous?:Chord;exclude?:Chord;fixedRoot?:number;fixedQuality?:string;random?:()=>number}):Chord{
  const unique=[...new Set(qualities)];
  if(!unique.length)throw new Error('A card palette needs at least one chord quality.');
- const candidates=Array.from({length:12},(_,root)=>unique.map(quality=>({root,quality}))).flat().filter(c=>!exclude||c.root!==exclude.root||c.quality!==exclude.quality);
+ const candidates=Array.from({length:12},(_,root)=>unique.map(quality=>({root,quality}))).flat().filter(c=>(fixedRoot===undefined||c.root===fixedRoot)&&(fixedQuality===undefined||c.quality===fixedQuality));
+ const allowed=candidates.filter(c=>!exclude||c.root!==exclude.root||c.quality!==exclude.quality);
+ if(allowed.length)candidates.splice(0,candidates.length,...allowed);
+ if(!candidates.length)throw new Error('No chord matches the held dice.');
  const weights=candidates.map(c=>cardConnectionWeight(c,previous)),total=weights.reduce((a,b)=>a+b,0),blend=Math.max(0,Math.min(100,randomness))/100;
  let draw=Math.max(0,Math.min(1,random()));
  for(let i=0;i<candidates.length;i++){draw-=(1-blend)*weights[i]/total+blend/candidates.length;if(draw<0)return candidates[i]}

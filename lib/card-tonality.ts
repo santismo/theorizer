@@ -57,14 +57,15 @@ function voiceAlternative(planned:Chord,qualities:readonly string[],exclude:Chor
  });
  return alternatives.length?weighted(alternatives,c=>cardConnectionWeight(c,planned),random):planned;
 }
-export function chooseTonalCard({qualities,amount,history,exclude,random=Math.random}:{qualities:readonly string[];amount:number;history:Chord[];exclude?:Chord;random?:()=>number}):TonalCard{
- const candidates=pool(qualities);if(!candidates.length)throw new Error('A tonal palette needs chord qualities.');
+export function chooseTonalCard({qualities,amount,history,exclude,fixedRoot,fixedQuality,random=Math.random}:{qualities:readonly string[];amount:number;history:Chord[];exclude?:Chord;fixedRoot?:number;fixedQuality?:string;random?:()=>number}):TonalCard{
+ const allowedQualities=fixedQuality===undefined?qualities:[fixedQuality];
+ const candidates=pool(qualities).filter(c=>(fixedRoot===undefined||c.root===fixedRoot)&&(fixedQuality===undefined||c.quality===fixedQuality));if(!candidates.length)throw new Error('A tonal palette needs chord qualities.');
  const previous=history.filter(c=>!c.empty).at(-1),prior=tonalMemory(previous),depth=Math.max(0,Math.min(100,amount));
  const estimated=inferTonalCenters(history)[0];
  const center:TonalCenter=prior?.center??(estimated?{key:estimated.key,mode:estimated.mode}:{key:previous?.root??0,mode:'Major'});
- if(prior&&prior.amount===depth&&prior.target&&prior.pending.length&&prior.pending.every(c=>qualities.includes(c.quality))){
+ if(prior&&prior.amount===depth&&prior.target&&prior.pending.length&&prior.pending.every(c=>qualities.includes(c.quality))&&(fixedRoot===undefined||prior.pending[0].root===fixedRoot)&&(fixedQuality===undefined||prior.pending[0].quality===fixedQuality)){
   const planned=prior.pending[0],pending=prior.pending.slice(1),arrived=pending.length===0;
-  return stamp(voiceAlternative(planned,qualities,exclude,random),{center:arrived?prior.target:center,target:arrived?undefined:prior.target,pending,amount:depth,settled:0},prior.target);
+  return stamp(voiceAlternative(planned,allowedQualities,exclude,random),{center:arrived?prior.target:center,target:arrived?undefined:prior.target,pending,amount:depth,settled:0},prior.target);
  }
  const settled=prior?.settled??2;
  const shouldMove=depth>0&&settled>=1&&random()<.8*Math.pow(depth/100,1.25);
@@ -72,7 +73,7 @@ export function chooseTonalCard({qualities,amount,history,exclude,random=Math.ra
   // Nearby controls favor shared scales; far-right controls favor remote but purposeful arrivals.
   const wanted=.4+depth/100*4.3;
   const destinations=centers.filter(c=>!sameCenter(c,center)&&candidates.some(chord=>tonicQuality(chord,c)&&tonalFit(chord,c)===1));
-  if(!destinations.length){const options=candidates.filter(c=>!same(c,exclude));const chosen=weighted(options,c=>Math.exp(tonalFit(c,center)*4)*Math.pow(cardConnectionWeight(c,previous),.5),random);return stamp(chosen,{center,pending:[],amount:depth,settled:settled+1})}
+  if(!destinations.length){const filtered=candidates.filter(c=>!same(c,exclude)),options=filtered.length?filtered:candidates;const chosen=weighted(options,c=>Math.exp(tonalFit(c,center)*4)*Math.pow(cardConnectionWeight(c,previous),.5),random);return stamp(chosen,{center,pending:[],amount:depth,settled:settled+1})}
   const target=weighted(destinations,c=>Math.exp(-Math.pow(tonalDistance(center,c)-wanted,2)/1.2),random);
   const tonics=candidates.filter(c=>tonicQuality(c,target)&&tonalFit(c,target)===1);
   const arrival=weighted(tonics,c=>1/Math.max(1,pitchClasses(c).length-2),random);
@@ -83,10 +84,10 @@ export function chooseTonalCard({qualities,amount,history,exclude,random=Math.ra
   const pivot=pivots.length?weighted(pivots,c=>cardConnectionWeight(c,previous),random):undefined;
   const route=[...(pivot?[pivot]:[]),...(approach?[approach]:[]),arrival];
   const [first,...pending]=route;
-  const chosen=voiceAlternative(first,qualities,exclude,random);
+  const chosen=voiceAlternative(first,allowedQualities,exclude,random);
   return stamp(chosen,{center:pending.length?center:target,target:pending.length?target:undefined,pending,amount:depth,settled:0},pivot?center:target);
  }
- const options=candidates.filter(c=>!same(c,exclude));
+ const filtered=candidates.filter(c=>!same(c,exclude)),options=filtered.length?filtered:candidates;
  const bestFit=Math.max(...options.map(c=>tonalFit(c,center)));
  const inKey=options.filter(c=>tonalFit(c,center)>=bestFit-.001);
  const choice=weighted(inKey,c=>Math.pow(cardConnectionWeight(c,previous),.5)*(tonicQuality(c,center)?1.25:1),random);

@@ -5,11 +5,11 @@ import {Plus,MoreHorizontal} from 'lucide-react';
 import {chordName,type Chord} from '@/lib/harmony';
 import {nearestChordGridSlot} from '@/lib/chord-order';
 
-type Props={chords:Chord[];onPlay:(index:number)=>void;onEdit:(index:number)=>void;onOptions:(index:number)=>void;onMove:(from:number,to:number)=>void;onDragStart:()=>void};
+type Props={appearance?:'tiles'|'cards';chords:Chord[];onPlay:(index:number)=>void;onEdit:(index:number)=>void;onOptions:(index:number)=>void;onMove:(from:number,to:number)=>void;onDragStart:()=>void};
 type Drag={from:number;to:number;pointerId:number;startX:number;startY:number;x:number;y:number;offsetX:number;offsetY:number;width:number;height:number;active:boolean;handle:HTMLButtonElement};
 type Preview={from:number;to:number;left:number;top:number;width:number};
 
-export function KeptChords({chords,onPlay,onEdit,onOptions,onMove,onDragStart}:Props){
+export function KeptChords({appearance='tiles',chords,onPlay,onEdit,onOptions,onMove,onDragStart}:Props){
  const strip=useRef<HTMLDivElement>(null),drag=useRef<Drag|null>(null),hold=useRef<ReturnType<typeof setTimeout>|null>(null),frame=useRef(0),suppressClick=useRef(false);
  const [preview,setPreview]=useState<Preview|null>(null),[announcement,setAnnouncement]=useState('');
  function clearTimer(){if(hold.current!==null){clearTimeout(hold.current);hold.current=null}}
@@ -58,7 +58,7 @@ export function KeptChords({chords,onPlay,onEdit,onOptions,onMove,onDragStart}:P
   return `translate(${slots[target].offsetLeft-slots[index].offsetLeft}px,${slots[target].offsetTop-slots[index].offsetTop}px)`;
  }
  const destination=preview&&strip.current?.querySelectorAll<HTMLElement>('[data-reorder-slot]')[preview.to];
- return <section className="kept-chords" aria-label="Kept chords">
+ return <section className={`kept-chords ${appearance==='cards'?'card-kept':''}`} aria-label="Kept chords">
   <div className={`kept-scroll ${preview?'is-reordering':''}`} ref={strip}>
    {chords.map((c,i)=>c.empty?<button key={i} className="kept-chord vacant reorder-slot" data-reorder-slot={i} data-empty-slot={i} style={{transform:shift(i)}} aria-label={`Add chord to bar ${i+1}`} onClick={()=>onEdit(i)}><Plus size={15}/></button>:<div key={i} data-reorder-slot={i} className={`kept-tile reorder-slot ${preview?.from===i?'drag-source':''}`} style={{transform:shift(i)}}>
     <button className="kept-chord" aria-label={`Play ${chordName(c)}, bar ${i+1}`} onClick={()=>onPlay(i)}><span>{chordName(c)}</span></button>
@@ -68,6 +68,6 @@ export function KeptChords({chords,onPlay,onEdit,onOptions,onMove,onDragStart}:P
    {preview&&destination&&<div className="chord-drop-position" aria-hidden="true" style={{left:destination.offsetLeft,top:destination.offsetTop,width:destination.offsetWidth,height:destination.offsetHeight}}/>}
   </div>
   <span className="reorder-announcement" role="status">{announcement}</span>
-  {preview&&chords[preview.from]&&createPortal(<div className="kept-tile kept-drag-ghost" aria-hidden="true" style={{left:preview.left,top:preview.top,width:preview.width}}><div className="kept-chord">{chordName(chords[preview.from])}</div><div className="kept-more"><MoreHorizontal size={15}/></div></div>,document.body)}
+  {preview&&chords[preview.from]&&createPortal(<div className={`kept-tile kept-drag-ghost ${appearance==='cards'?'card-kept':''}`} aria-hidden="true" style={{left:preview.left,top:preview.top,width:preview.width}}><div className="kept-chord">{chordName(chords[preview.from])}</div><div className="kept-more"><MoreHorizontal size={15}/></div></div>,document.body)}
  </section>;
 }

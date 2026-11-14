@@ -1,4 +1,4 @@
-export type Chord = {root:number; quality:string; bass?:number; locked?:boolean; spelling?:string; key?:number; mode?:string;transition?:string;empty?:boolean};
+export type Chord = {voicing?:number[];root:number; quality:string; bass?:number; locked?:boolean; spelling?:string; key?:number; mode?:string;transition?:string;empty?:boolean};
 export type Settings = {genre:string;style:string;key:number;mode:string;count:number;color:number;movement:string;modulation:string;ending:string;tempo:number;instrument:string;swing:number;modulationApproach?:string;modulationTargetKey?:number;modulationTargetMode?:string;modulationAt?:number;modulationReturn?:boolean;modulationReturnAt?:number};
 export const NOTES=['C','Db','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
 export const SHARPS=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -188,6 +188,7 @@ export function generate(s:Settings,existing:Chord[],seed=Math.random(),only?:nu
 }
 export function voice(c:Chord,previous:number[]=[]):number[]{
  if(c.empty)return [];
+ if(c.voicing?.length&&c.voicing.every(n=>Number.isInteger(n)&&n>=24&&n<=88&&pitchClasses(c).includes(n%12))&&pitchClasses(c).every(pc=>c.voicing!.some(n=>n%12===pc)))return [...c.voicing];
  const tones=QUALITIES[c.quality]||QUALITIES[''];const bass=36+(c.bass??c.root);let upper=tones.map(n=>48+c.root+n);while(upper[0]>59)upper=upper.map(n=>n-12);
  const variants=[upper];for(let i=1;i<tones.length;i++){const last=variants.at(-1)!;variants.push([...last.slice(1),last[0]+12].sort((a,b)=>a-b));}
  const chosen=variants.filter(v=>v.at(-1)!<=88).sort((a,b)=>{const cost=(v:number[])=>previous.length?v.reduce((sum,n)=>sum+Math.min(...previous.slice(1).map(p=>Math.abs(p-n))),0):Math.abs(v.reduce((x,y)=>x+y,0)/v.length-64);return cost(a)-cost(b)})[0]||upper;
