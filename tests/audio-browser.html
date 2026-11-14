@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Chord audio regression checks</title><style>body{font:16px system-ui;padding:24px;background:#111;color:#eee}button{padding:14px}pre{white-space:pre-wrap}</style><h1>Chord audio regression checks</h1><button id="run">Run audio checks</button><pre id="result">Ready</pre><script type="module">
+import {Instrument,CHORD_RELEASE_SECONDS} from '/lib/audio.ts';
+const assert=(ok,message)=>{if(!ok)throw new Error(message)};
+async function render(sound,legacy,rapid=false){
+ const rate=48000,ctx=new OfflineAudioContext(1,rate*2,rate),player=new Instrument();
+ player.context=ctx;player.master=ctx.createGain();player.master.gain.value=.55;player.master.connect(ctx.destination);
+ player.play({root:0,quality:'maj7'},1.7,sound,[],0,[36,60,64,67,71]);
+ const times=rapid?Array.from({length:18},(_,i)=>.045+i*.047):[.137];
+ let stopped=0;
+ async function switches(){for(let i=0;i<times.length;i++){
+  await ctx.suspend(times[i]);stopped=ctx.currentTime;
+  if(legacy){for(const node of [...player.nodes])node.stop(stopped+.02)}else{player.stop();player.stop()}
+  if(rapid&&i<times.length-1)player.play({root:i%12,quality:'m7'},1.7,sound,[],undefined,[36+i%12,60+i%12,63+i%12,67+i%12,70+i%12]);
+  await ctx.resume();
+ }}
+ const switching=switches(),buffer=await ctx.startRendering();await switching;
+ const data=buffer.getChannelData(0),cut=Math.round((stopped+(legacy?.02:CHORD_RELEASE_SECONDS))*rate);
+ let edge=0;for(let i=cut-2;i<=cut+2;i++)edge=Math.max(edge,Math.abs(data[i]-data[i-1]));
+ const tailStart=Math.ceil((stopped+CHORD_RELEASE_SECONDS+.006)*rate);
+ let tail=0,peak=0;for(let i=0;i<data.length;i++){assert(Number.isFinite(data[i]),'Nonfinite audio');peak=Math.max(peak,Math.abs(data[i]));if(i>=tailStart)tail=Math.max(tail,Math.abs(data[i]))}
+ assert(player.nodes.length===0,'Oscillators were not cleaned up');return {edge,tail,peak};
+}
+document.querySelector('#run').onclick=async()=>{
+ const result=document.querySelector('#result');result.textContent='Rendering audio…';
+ try{const report=[];for(const sound of ['Plucked guitar','Electric piano','Soft piano','Warm pad']){
+  const old=await render(sound,true),smooth=await render(sound,false),rapid=await render(sound,false,true);
+  assert(smooth.edge<old.edge*.1,`${sound}: release discontinuity did not improve`);
+  assert(smooth.tail<1e-7&&rapid.tail<1e-7,`${sound}: audio persisted after the release`);
+  assert(rapid.peak<1,`${sound}: clipping under rapid switching`);
+  report.push({sound,oldCutJump:old.edge,fadeEndJump:smooth.edge,rapidPeak:rapid.peak,silentAfterRelease:rapid.tail===0});
+ }result.textContent='PASS: all four sounds, rapid switching, repeated stop, release continuity, silence and cleanup.\n'+JSON.stringify(report,null,2)}catch(e){result.textContent='FAIL: '+e.stack}
+};
+</script></html>
