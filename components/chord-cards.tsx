@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState,type PointerEvent} from 'react';
-import {ArrowUpRight,Folder,Play,Plus,Save,Settings2,Undo2,X} from 'lucide-react';
+import {ArrowUpRight,Folder,Play,Plus,RefreshCw,Save,Settings2,Undo2,X} from 'lucide-react';
 import {KeptChords} from '@/components/kept-chords';
 import {availableDiceSlots} from '@/lib/dice';
 import {DICE_PALETTES,type DicePalette} from '@/lib/dice-selection';
@@ -10,8 +10,8 @@ import {chordName,type Chord,type Settings} from '@/lib/harmony';
 
 type CardLogic=ChordLogic;
 export type CardSession={history:CardHistory;palette:DicePalette;randomness:number;addCount?:number;logic?:CardLogic;modulation?:number;movement?:number};
-type Props={initialSession?:CardSession;onSessionChange:(session:CardSession)=>void;settings:Settings;chords:Chord[];previousSectionChord?:Chord;onAudition:(c:Chord)=>void;onAddMany:(chords:Chord[])=>void;onStop:()=>void;onInspect:(i:number)=>void;onChordPlay:(i:number)=>void;onReroll:(i:number,c:Chord)=>void;onRepeat:(i:number)=>void;onMove:(from:number,to:number)=>void;onRemove:(i:number)=>void;onEdit:(i:number)=>void;onCompose:()=>void;onDice:()=>void;onSave:()=>void;onLibrary:()=>void;onUndo:()=>void;canUndo:boolean;name:string;onName:(name:string)=>void;onSettings:(patch:Partial<Settings>)=>void;onExport:()=>void};
-export function ChordCards({initialSession,onSessionChange,settings,chords,previousSectionChord,onAudition,onAddMany,onStop,onInspect,onChordPlay,onReroll,onRepeat,onMove,onRemove,onEdit,onCompose,onDice,onSave,onLibrary,onUndo,canUndo,name,onName,onSettings,onExport}:Props){
+type Props={initialSession?:CardSession;onSessionChange:(session:CardSession)=>void;settings:Settings;chords:Chord[];previousSectionChord?:Chord;onAudition:(c:Chord)=>void;onAddMany:(chords:Chord[])=>void;onReset:()=>void;onStop:()=>void;onInspect:(i:number)=>void;onChordPlay:(i:number)=>void;onReroll:(i:number,c:Chord)=>void;onRepeat:(i:number)=>void;onMove:(from:number,to:number)=>void;onRemove:(i:number)=>void;onEdit:(i:number)=>void;onCompose:()=>void;onDice:()=>void;onSave:()=>void;onLibrary:()=>void;onUndo:()=>void;canUndo:boolean;name:string;onName:(name:string)=>void;onSettings:(patch:Partial<Settings>)=>void;onExport:()=>void};
+export function ChordCards({initialSession,onSessionChange,settings,chords,previousSectionChord,onAudition,onAddMany,onReset,onStop,onInspect,onChordPlay,onReroll,onRepeat,onMove,onRemove,onEdit,onCompose,onDice,onSave,onLibrary,onUndo,canUndo,name,onName,onSettings,onExport}:Props){
  const [palette,setPalette]=useState<DicePalette>(initialSession?.palette??'Simple'),[randomness,setRandomness]=useState(initialSession?.randomness??35),[settingsOpen,setSettingsOpen]=useState(false),[actions,setActions]=useState<number|null>(null);
  const [logic,setLogic]=useState<CardLogic>(initialSession?.logic??'tonal'),[modulation,setModulation]=useState(initialSession?.modulation??35),[movement,setMovement]=useState(initialSession?.movement??35);
  const [addCount,setAddCount]=useState(initialSession?.addCount??1);
@@ -56,6 +56,13 @@ export function ChordCards({initialSession,onSessionChange,settings,chords,previ
   const batch=takeCardBatch(history,addCount,(previous,trail)=>drawCard(previous,trail));
   onAddMany(batch.chords);setHistory(batch.history);
  }
+ function resetCards(){
+  if(transitioning.current)return;
+  onReset();setActions(null);cancel();suppressClick.current=false;
+  const qualities=DICE_PALETTES[palette];
+  const first=chooseLogicChord({logic,qualities,amount,history:[],exclude:current});
+  setHistory(withCardPreview({cards:[first],index:0},(_,trail)=>chooseLogicChord({logic,qualities,amount,history:trail})));
+ }
  function start(e:PointerEvent<HTMLButtonElement>){if(e.button!==0||transitioning.current)return;suppressClick.current=false;gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY,t:e.timeStamp,horizontal:false};e.currentTarget.setPointerCapture(e.pointerId)}
  function move(e:PointerEvent<HTMLButtonElement>){const g=gesture.current;if(!g||g.id!==e.pointerId)return;const dx=e.clientX-g.x,dy=e.clientY-g.y;if(!g.horizontal){if(Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)){suppressClick.current=true;gesture.current=null;return}if(Math.abs(dx)<8||Math.abs(dx)<Math.abs(dy))return;g.horizontal=true;setDragging(true)}suppressClick.current=true;setOffset(Math.max(-160,Math.min(160,dx*(dx>0&&history.index===0?.2:1))))}
  function finish(e:PointerEvent<HTMLButtonElement>){const g=gesture.current;if(!g||g.id!==e.pointerId)return;gesture.current=null;setDragging(false);const direction=cardSwipeDirection(e.clientX-g.x,e.clientY-g.y,e.timeStamp-g.t);if(direction){suppressClick.current=true;navigate(direction)}else setOffset(0)}
@@ -76,7 +83,7 @@ export function ChordCards({initialSession,onSessionChange,settings,chords,previ
    <span className="sr-only" aria-live="polite">{phase.startsWith('exit')?'':`Card ${history.index+1}: ${chordName(current)}. Next: ${chordName(nextCard)}`}</span>
   </section>
   <section className="studio-controls" aria-label="Card controls">
-   <div className="studio-actions"><button className="studio-icon studio-play" disabled={busy} onClick={()=>onAudition(current)} aria-label="Play current card"><Play size={20} fill="currentColor"/></button><div className="card-batch-controls"><button className="studio-icon" disabled={busy||slots.length<addCount} onClick={keepBatch} aria-label={`Add ${addCount} ${addCount===1?'chord':'chords'}`} title={`Add ${addCount} ${addCount===1?'chord':'chords'}`}><Plus size={24}/></button><select value={addCount} disabled={busy} onChange={e=>setAddCount(Number(e.target.value))} aria-label="Number of chords to add">{Array.from({length:16},(_,i)=><option value={i+1} key={i+1}>{i+1}</option>)}</select></div></div>
+   <div className="studio-actions"><button className="studio-icon studio-play" disabled={busy} onClick={()=>onAudition(current)} aria-label="Play current card"><Play size={20} fill="currentColor"/></button><div className="card-batch-controls"><button className="studio-icon" disabled={busy||slots.length<addCount} onClick={keepBatch} aria-label={`Add ${addCount} ${addCount===1?'chord':'chords'}`} title={`Add ${addCount} ${addCount===1?'chord':'chords'}`}><Plus size={24}/></button><select value={addCount} disabled={busy} onChange={e=>setAddCount(Number(e.target.value))} aria-label="Number of chords to add">{Array.from({length:16},(_,i)=><option value={i+1} key={i+1}>{i+1}</option>)}</select><button className="studio-icon card-reset" disabled={busy} onClick={resetCards} aria-label="Reset cards and clear saved chords" title="Start fresh · keep settings"><RefreshCw size={16}/></button></div></div>
    <label className="connection-slider"><span>{logic==='tonal'?'Similar':logic==='voice'?'Smooth':'Connected'}</span><input type="range" min="0" max="100" value={amount} disabled={busy} onChange={e=>updateSelection(Number(e.target.value))} aria-label={logic==='tonal'?'Similar to modulated':logic==='voice'?'Smooth to angular':'Connected to random'} aria-valuetext={logic==='tonal'?`${amount}% modulation`:logic==='voice'?`${amount}% angular`:amount===100?'Pure random':amount===0?'Strongly connected':`${amount}% random`}/><span>{logic==='tonal'?'Modulated':logic==='voice'?'Angular':'Random'}</span></label>
    {slots.length<addCount&&<p className="dice-capacity" role="status">{slots.length?`${slots.length} empty ${slots.length===1?'bar remains':'bars remain'}. Choose fewer chords or free up bars.`:'Section full (16 chords). Remove a chord or start another section in the composer.'}</p>}
   </section>
